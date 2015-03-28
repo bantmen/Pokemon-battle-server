@@ -1,0 +1,1 @@
+char *WELCOME_MESSAGE = "Enter your name: ";
