@@ -14,20 +14,58 @@ int match() {
 // Picks a random integer from the interval [a, b]
 int randrange(int a, int b) {
 	srand(time(null));
-	return rand()%(b-a)+a;
+	return rand()%(b-a+1)+a;
+}
+
+// Get the pokemons ready
+int set_battlefield(struct client *c1, struct client *c2) {
+	// Set the rivalry
+	c1->opp = c2;
+	c2->opp = c1;
+
+	// Toss a coin and decide on who starts
+	int coin = randrange(0, 1); // 0-> c1 starts, 1-> c2 starts
+	if (coin == 0) { 
+		c1->state = MYTURN;
+		c2->state = YOURTURN;
+	}
+	else {
+		c1->state = YOURTURN;
+		c2->state = MYTURN; 
+	}
+	c1->pkm->hp = randrange(20, 30);
+	c2->pkm->hp = randrange(20, 30);
+
+	return tim;
+
 }
 
 // Handles battle commands. Ignore if wrong command
 int handle_command(struct client *c, char option) {
 
+	int dmg = 0; // dmg rolled depending on case option
+
 	switch(option) {
-		case 'a':
+		case ATTACKMOVE: 
+			dmg = randrange(2, 6);
 			break;
-		case 'p':
+		case POWERMOVE:
+			dmg = randrange(6, 18) * randrange(0, 1);
 			break;
-		case 's':
+		case SPEAKMOVE:
+			write(c->fd, "Speak: \n", 7+1);
+			c->state = SPEAK;
 			break;
 	}
+
+	c->opp->pkm->hp -= dmg;
+
+	// check for hp
+
+	c->state = YOURTURN;
+	c->opp->state = MYTURN;
+
+	return 0;
 
 }
 
