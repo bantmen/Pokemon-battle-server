@@ -31,7 +31,8 @@ struct client {
     // Our stuff now
     //int last_played;         // fd of the last played player. -1 means NULL
     struct client *opp;   // pointer to opponent. also shows last played
-    char name[MAX_LENGTH/2]; 
+    // char name[MAX_LENGTH/2]; 
+    char const *name; 
     char buf[MAX_LENGTH];
     char inbuf;
     struct pokemon *pkmn; // to be used in battles
@@ -117,10 +118,7 @@ int main(void) {
             if (FD_ISSET(c->fd, &rset)) {
                 if ((read_len = read(c->fd, c->buf + c->inbuf, sizeof(c->buf)-c->inbuf)) > 0) {
 
-                    // where = find_network_newline(c->buf, c->inbuf);
-                    // if (where != -1) {
 
-                    // }
                 }
             }
         }
@@ -141,10 +139,21 @@ int find_network_newline(char *buf, int inbuf) {
 }
 
 void handle_existing(struct client *c) {
+    char message[MAX_LENGTH];
+
     int state = c->state;
-    
     switch(state) {
         case NONAME:   // Check if full message is ready. if ready, then give name
+            where = find_network_newline(c->buf, c->inbuf);
+            if (where != -1) {  // Then ready to be collected
+                strncpy(c->name, c->buf, c->inbuf);
+                c->inbuf = 0;
+                c->state = LOBBY;
+                sprintf(message, "Welcome, %s! Awaiting opponent...\n", c->name);
+                write(c->fd, message, MAX_LENGTH);
+                sprintf(message, "**%s enters the arena**\n", c->name);
+
+            }
             break;
         case LOBBY:    // Ignore the lobby talk
             break;
@@ -154,7 +163,7 @@ void handle_existing(struct client *c) {
             break;
         case ISSPEAK:  // Check if full message is ready. if ready, then print it to the battle
             // make him talk
-            
+
             break;
     }
 
@@ -172,7 +181,7 @@ void handle_newclient(int clientfd, struct client *head, char *client_name) {
     memmove(client_message, client_name, strlen(client_name)); 
     memmove(client_message+strlen(client_message), BROADCAST_MESSAGE, strlen(BROADCAST_MESSAGE)+1);   
 
-    broadcast(head, client_message, strlen(client_message)); // Broadcast the new player
+    broadcast(head, client_message, strlen(client_message), NULL); // Broadcast the new player
 
     // return client_name;
 }
@@ -253,11 +262,14 @@ static struct client *removeclient(struct client *top, int fd) {
     return top;
 }
 
-
-static void broadcast(struct client *top, char *s, int size) {
+/* 
+    Broadcast to everyone the message s. Don't broadcast to yourself (c).
+*/
+static void broadcast(struct client *top, char *s, int size, struct client *c) {
     struct client *p;
     for (p = top; p; p = p->next) {
-        write(p->fd, s, size);
+        if (c && p->fd != c->fd)     // don't broadcast to self. make sure c exists
+            write(p->fd, s, size);
     }
     /* should probably check write() return value and perhaps remove client */
 }

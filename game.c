@@ -83,16 +83,6 @@ void battlecast(struct client *c) {
 }
 
 /* 
-	Do a status update. Will be called for both side.
-	c is me.
-*/
-void battle_statuscast(struct client *c) {
-	char message[MAX_LENGTH];
-	sprintf(message, "Your hitpoints: %d\n");
-	write(c->msg, message, MAX_LENGTH);
-}
-
-/* 
 	c is the speaker who spoke s
 */
 void battlespeak(struct client *c, char *s) {
@@ -108,12 +98,15 @@ void battlespeak(struct client *c, char *s) {
 
 	// Now c is done speaking and back to his turn
 	c->state = MYTURN;
-	battle_mycast(c);
+	battlecast(c);
 }
+
+
 
 /* 
 	Handles battle commands. Ignore if wrong command.
 	Returns 1 if game over, otherwise 0.
+	c is the client with the turn.
 */
 int handle_command(struct client *c, char option) {
 	int dmg = 0; // dmg rolled depending on case option
@@ -136,12 +129,13 @@ int handle_command(struct client *c, char option) {
 			c->state = SPEAK;
 			break;
 	}
+	c->opp->pkmn->hp -= dmg;  // reduce the hp accordingly
 
-	c->opp->pkmn->hp -= dmg;
+	char message[MAX_LENGTH];
 
 	int game_over = (c->opp->pkmn->hp) <= 0;
 	if (game_over) { // opponent dead, game done
-		char message[MAX_LENGTH];
+		
 		// Win message to you
 		sprintf(message, "%s gives up. You win!\n\n
 						  Awaiting next opponent...\n", 
@@ -156,8 +150,24 @@ int handle_command(struct client *c, char option) {
 
 	}
 	else if (did_swing) { // then switch the turns
+		if (dmg > 0) {  // then we hit
+			sprintf(message, "You hit %s for %d damage!\n", 
+					c->opp->name, dmg);
+			write(c->fd, message, MAX_LENGTH);
+			sprintf(message, "%s hits you for %d damage!\n",
+					c->name, dmg);
+			write(c->opp->fd, message, MAX_LENGTH);
+		}
+		else {
+			write(c->fd, "You missed!\n", MAX_LENGTH);
+			sprintf(message, "%s missed you!\n", c->name);
+		}
+
+		// Change the turns
 		c->state = YOURTURN;
 		c->opp->state = MYTURN;
+
+		// Do the usual turn casts
 		battlecast(c);
 	}
 
