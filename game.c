@@ -51,6 +51,8 @@ void set_battlefield(struct client *c1, struct client *c2) {
 	// Send to c2
 	sprintf(message, "You engage %s!\n", c1->name);
 	write(c2->fd, message, MAX_LENGTH);
+
+	battlecast(c1);
 }
 
 /* 
@@ -63,14 +65,21 @@ void battlecast(struct client *c) {
 	sprintf(message, 
 		   "Your hitpoints: %d\n
 			Your powermoves: %d\n\n 
-			%s's hitpoints: %d\n\n
-			(a)ttacks\n
-			%s\n
-			(s)peak something\n", 
+			%s's hitpoints: %d\n\n", 
 			c->pkmn->hp, c->pkmn->pm,
-			c->opp->name, c->opp->pkmn->hp,
-			c->pkmn->pm? "(p)owermove" : "");  // wow
-	write(c->fd, message, MAX_LENGTH);
+			c->opp->name, c->opp->pkmn->hp);
+
+	struct client *me;
+	if (c->state == MYTURN) me = c;
+	else me = c->opp;
+
+	write(me->fd, message, MAX_LENGTH);
+	write(me->fd, "(a)ttacks\n
+		  (p)owermove\n(s)peak something\n", 
+	      MAX_LENGTH);
+	write(me->opp->fd, message, MAX_LENGTH);
+	sprintf(message, "Waiting for %s to strike...\n", me->name);
+	write(me->opp->fd, message, MAX_LENGTH);
 }
 
 /* 
@@ -149,6 +158,7 @@ int handle_command(struct client *c, char option) {
 	else if (did_swing) { // then switch the turns
 		c->state = YOURTURN;
 		c->opp->state = MYTURN;
+		battlecast(c);
 	}
 
 	return game_over;
