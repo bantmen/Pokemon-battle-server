@@ -6,18 +6,23 @@
 
 #include "game.h"
 
-// 
+/* 
+*/
 int match() {
 
 }
 
-// Picks a random integer from the interval [a, b]
+/* 
+	Picks a random integer from the interval [a, b]
+*/
 int randrange(int a, int b) {
 	srand(time(null));
 	return rand()%(b-a+1)+a;
 }
 
-// Get the pokemons ready
+/* 
+	Get the pokemons ready
+*/
 void set_battlefield(struct client *c1, struct client *c2) {
 	// Set the rivalry
 	c1->opp = c2;
@@ -33,11 +38,11 @@ void set_battlefield(struct client *c1, struct client *c2) {
 		c2->state = MYTURN; 
 	}
 	// Set the hitpoints randomly between 20 to 30
-	c1->pkm->hp = randrange(20, 30);
-	c2->pkm->hp = randrange(20, 30);
+	c1->pkmn->hp = randrange(20, 30);
+	c2->pkmn->hp = randrange(20, 30);
 	// Set the number of powermoves between 1 to 3
-	c1->pkm->pm = randrange(1,3);
-	c2->pkm->pm = randrange(1,3);
+	c1->pkmn->pm = randrange(1,3);
+	c2->pkmn->pm = randrange(1,3);
 	// Print the engage messages to both sides
 	char message[MAX_LENGTH];
 	// Send to c1
@@ -48,9 +53,60 @@ void set_battlefield(struct client *c1, struct client *c2) {
 	write(c2->fd, message, MAX_LENGTH);
 }
 
-// Handles battle commands. Ignore if wrong command
-int handle_command(struct client *c, char option) {
+/* 
+	Beautiful battlecast
+	c is me
+*/
+void battlecast(struct client *c) {
+	// write tim + \n
+	char message[MAX_LENGTH];
+	sprintf(message, 
+		   "Your hitpoints: %d\n
+			Your powermoves: %d\n\n 
+			%s's hitpoints: %d\n\n
+			(a)ttacks\n
+			%s\n
+			(s)peak something\n", 
+			c->pkmn->hp, c->pkmn->pm,
+			c->opp->name, c->opp->pkmn->hp,
+			c->pkmn->pm? "(p)owermove" : "");  // wow
+	write(c->fd, message, MAX_LENGTH);
+}
 
+/* 
+	Do a status update. Will be called for both side.
+	c is me.
+*/
+void battle_statuscast(struct client *c) {
+	char message[MAX_LENGTH];
+	sprintf(message, "Your hitpoints: %d\n");
+	write(c->msg, message, MAX_LENGTH);
+}
+
+/* 
+	c is the speaker who spoke s
+*/
+void battlespeak(struct client *c, char *s) {
+	char message[MAX_LENGTH];
+	// c will see
+	sprintf(message, "You spoke: %s\n\n", s);
+	write(c->fd, message, MAX_LENGTH);
+	// c's opponent will see
+	sprintf(message, "%s takes a break to tell you:\n 
+					  %s\n\n", 
+					  c->name, s);
+	write(c->opp->fd, message, MAX_LENGTH);
+
+	// Now c is done speaking and back to his turn
+	c->state = MYTURN;
+	battle_mycast(c);
+}
+
+/* 
+	Handles battle commands. Ignore if wrong command.
+	Returns 1 if game over, otherwise 0.
+*/
+int handle_command(struct client *c, char option) {
 	int dmg = 0; // dmg rolled depending on case option
 	int did_swing = 0;
 
@@ -60,8 +116,9 @@ int handle_command(struct client *c, char option) {
 			did_swing = 1;
 			break;
 		case POWERMOVE:
-			if (c->pkm->pm > 0) {
+			if (c->pkmn->pm > 0) {
 				dmg = randrange(6, 18) * randrange(0, 1);
+				c->pkmn->pm -= 1;
 				did_swing = 1;
 			}
 			break;
@@ -71,9 +128,10 @@ int handle_command(struct client *c, char option) {
 			break;
 	}
 
-	c->opp->pkm->hp -= dmg;
+	c->opp->pkmn->hp -= dmg;
 
-	if (c->opp->pkm->hp <= 0) { // opponent dead, game done
+	int game_over = (c->opp->pkmn->hp) <= 0;
+	if (game_over) { // opponent dead, game done
 		char message[MAX_LENGTH];
 		// Win message to you
 		sprintf(message, "%s gives up. You win!\n\n
@@ -86,30 +144,14 @@ int handle_command(struct client *c, char option) {
 						  Awaiting next opponent...\n", 
 						  c->name);
 		write(c->opp->fd, message, MAX_LENGTH); 
+
 	}
 	else if (did_swing) { // then switch the turns
 		c->state = YOURTURN;
 		c->opp->state = MYTURN;
 	}
 
-	return 0;
-
+	return game_over;
 }
 
-// Beautiful battlecast
-void battlecast(struct client *c) {
-	// write tim + \n
 
-	char message[MAX_LENGTH];
-	sprintf(message, 
-		   "Your hitpoints: %d\n
-			Your powermoves: %d\n\n 
-			%s's hitpoints: %d\n\n
-			(a)ttacks\n
-			%s\n
-			(s)peak something\n", 
-			c->pkmn->hp, c->pkmn->pm,
-			c->opp->name, c->opp->pkmn->hp,
-			c->pkm->pm? "(p)owermove" : "");  // wow
-	write(c->fd, message, MAX_LENGTH);
-}

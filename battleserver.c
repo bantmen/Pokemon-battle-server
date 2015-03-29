@@ -48,20 +48,21 @@ int bindandlisten(void);
 
 int main(void) {
     int clientfd, maxfd, nready;
-    struct client *p;
     struct client *head = NULL;
-    struct client lobby[3]; // waitlist for the available players
     socklen_t len;
     struct sockaddr_in q;
     struct timeval tv;
     fd_set allset;
     fd_set rset;
 
-    int i;
+    // int i;
 
     // Our stuff
     char client_name[MAX_LENGTH/2];
     int read_len;
+    int readyfd;
+    struct client lobby[3]; // waitlist for the available players
+    struct client *c;
 
     int listenfd = bindandlisten();
     // initialize allset and add listenfd to the
@@ -91,7 +92,7 @@ int main(void) {
             continue;
         }
 
-        // Then, they are just connecting
+        // Then handle the new guy
         if (FD_ISSET(listenfd, &rset)) {
             printf("a new client is connecting\n");
             len = sizeof(q);
@@ -111,16 +112,18 @@ int main(void) {
             write(clientfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE)); // Ask for their name
         }
 
-        // They have already connected, so we have their struct
-        p = get_client(listenfd);
+        for (c = head; c; c = c->next) {
+            // Handle all the existing clients
+            if (FD_ISSET(c->fd, &rset)) {
+                if ((read_len = read(c->fd, c->buf + c->inbuf, sizeof(c->buf)-c->inbuf)) > 0) {
 
-        if (!FD_ISSET(listenfd, &rset) && 
-            (read_len = read(p->fd, p->buf + p->inbuf, sizeof(p->buf)-p->inbuf)) > 0) {
-            where = find_network_newline()
+                    // where = find_network_newline(c->buf, c->inbuf);
+                    // if (where != -1) {
 
+                    // }
+                }
+            }
         }
-
-
 
     }
     return 0;
@@ -129,37 +132,33 @@ int main(void) {
 int find_network_newline(char *buf, int inbuf) {
     int i;
 
-    for(i=0;i<inbuf;i++){
+    for(i=0; i<inbuf; i++) {
         if (buf[i] == '\n') {
             return i;
         }
     }
-    return -1; // return the location of '\r' if found
+    return -1; // if '\n' not found
 }
 
-// return != -1 => input is ready to be used
-int handle_input(struct client *c) {
-    int where = find_network_newline(c->buf, c->inbuf);
+void handle_existing(struct client *c) {
+    int state = c->state;
+    
+    switch(state) {
+        case NONAME:   // Check if full message is ready. if ready, then give name
+            break;
+        case LOBBY:    // Ignore the lobby talk
+            break;
+        case YOURTURN: // Can't talk when it is not your turn!
+            break;
+        case MYTURN:   // Handle their command
+            break;
+        case ISSPEAK:  // Check if full message is ready. if ready, then print it to the battle
+            // make him talk
+            
+            break;
+    }
 
-
-
-
-
-    return where;
-
-
-    // int len = read(fd, buf, sizeof(buf) - 1);
-    // int i = find_network_newline(buf, len); 
-
-    // while (i == -1) {
-    //     len += read(fd, &buf[len], sizeof(buf) - 1);
-    //     i = find_network_newline(buf, len); 
-    // }
-
-    // buf[len] = '\0';
-
-    // return len;
-} 
+}
 
 void handle_newclient(int clientfd, struct client *head, char *client_name) {
     // char client_name[MAX_LENGTH/2];    // temp variable to hold client's name
