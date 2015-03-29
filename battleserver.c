@@ -27,7 +27,8 @@
 struct client {
     int fd;
     struct in_addr ipaddr;
-    struct client *next;
+    struct client *next;   // next for the general list
+    struct client *l_next; // next for the lobby list
     // Our stuff now
     //int last_played;         // fd of the last played player. -1 means NULL
     struct client *opp;   // pointer to opponent. also shows last played
@@ -41,15 +42,17 @@ struct client {
 
 static struct client *addclient(struct client *top, int fd, struct in_addr addr, const char *name);
 static struct client *removeclient(struct client *top, int fd);
-static void broadcast(struct client *top, char *s, int size);
+static void broadcast(struct client *top, char *s, int size, struct client *c);
 int handle_input(int fd, char *buf); 
-void handle_newclient(int clientfd, struct client *head, char *client_name);
 int find_network_newline(char *buf, int inbuf);
 int bindandlisten(void);
 
+// Global Variables
+struct client *head = NULL;  // Linked list of all clients
+struct client *lobby = NULL; // Queue of clients waiting in the lobby 
+
 int main(void) {
     int clientfd, maxfd, nready;
-    struct client *head = NULL;
     socklen_t len;
     struct sockaddr_in q;
     struct timeval tv;
@@ -117,8 +120,7 @@ int main(void) {
             // Handle all the existing clients
             if (FD_ISSET(c->fd, &rset)) {
                 if ((read_len = read(c->fd, c->buf + c->inbuf, sizeof(c->buf)-c->inbuf)) > 0) {
-
-
+                    handle_existing(c, read_len);
                 }
             }
         }
@@ -138,7 +140,7 @@ int find_network_newline(char *buf, int inbuf) {
     return -1; // if '\n' not found
 }
 
-void handle_existing(struct client *c) {
+void handle_existing(struct client *c, int read_len) {
     char message[MAX_LENGTH];
 
     int state = c->state;
@@ -146,44 +148,51 @@ void handle_existing(struct client *c) {
         case NONAME:   // Check if full message is ready. if ready, then give name
             where = find_network_newline(c->buf, c->inbuf);
             if (where != -1) {  // Then ready to be collected
+                c->buf[where] = '\0'; // Change \n with \0
                 strncpy(c->name, c->buf, c->inbuf);
                 c->inbuf = 0;
-                c->state = LOBBY;
                 sprintf(message, "Welcome, %s! Awaiting opponent...\n", c->name);
                 write(c->fd, message, MAX_LENGTH);
                 sprintf(message, "**%s enters the arena**\n", c->name);
+                broadcast(head, message, strlen(message), c);
 
+                // Change the state to lobby. try to match, else enqueue
+                c->state = LOBBY;
+                match(c);
+            }
+            else {  // update inbuf since they are not done writing
+                c->inbuf += read_len;
             }
             break;
         case LOBBY:    // Ignore the lobby talk
+            // Don't care
+            c->inbuf = 0;
             break;
         case YOURTURN: // Can't talk when it is not your turn!
+            // Don't care
+            c->inbuf = 0;
             break;
         case MYTURN:   // Handle their command
+            if (handle_command(c, c->buf[c->inbuf-1]) == 1) { // game over if 1
+                // add them to the end of lobby queue
+                match(c);
+                match(c->opp);
+            }
+            c->inbuf = 0;
             break;
-        case ISSPEAK:  // Check if full message is ready. if ready, then print it to the battle
-            // make him talk
-
+        case ISPEAK:  // Check if full message is ready. if ready, then print it to the battle
+            where = find_network_newline(c->buf, c->inbuf);
+            if (where != -1) {  // Then ready to be collected
+                c->buf[where+1] = '\0';   // Null terminate the message
+                c->inbuf = 0;
+                c->state = MYTURN; // Change back to his previous state
+            }
+            else {   // update inbuf since they are not done writing
+                c->inbuf += read_len;
+            }
             break;
     }
 
-}
-
-void handle_newclient(int clientfd, struct client *head, char *client_name) {
-    // char client_name[MAX_LENGTH/2];    // temp variable to hold client's name
-    char client_message[MAX_LENGTH]; // client_name + BROADCAST_MESSAGE
-
-    write(clientfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE)); // Welcome them
-    int len = handle_input(clientfd, client_name); // Store their name
-    client_name[len-1] = '\0';
-    // write(clientfd, );
-    
-    memmove(client_message, client_name, strlen(client_name)); 
-    memmove(client_message+strlen(client_message), BROADCAST_MESSAGE, strlen(BROADCAST_MESSAGE)+1);   
-
-    broadcast(head, client_message, strlen(client_message), NULL); // Broadcast the new player
-
-    // return client_name;
 }
 
  /* bind and listen, abort on error
@@ -239,6 +248,8 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr)
 
     p->next = top;
     top = p;
+
+    p->l_next = NULL; // not enqueued to the lobby yet
 
     return top;
 }

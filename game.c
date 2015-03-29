@@ -6,10 +6,30 @@
 
 #include "game.h"
 
-/* 
-*/
-int match() {
+// Will be abused nicely for sprintf stuff
+char message[MAX_LENGTH];
 
+// Extern from battleserver
+extern struct client *lobby;
+
+/* 
+	Match c with another client in the lobby.
+	Returns 1 if match 0 if no match.
+*/
+int match(struct client *c) {
+	struct client *p, *temp;
+	for (p = lobby; p; p = p->l_next) {
+		// If they didn't play against each other the last time
+		if (c->fd != p->opp->fd || p->fd != c->opp->fd) {  // Then match
+			temp->l_next = p->l_next;
+			p->l_next = NULL;
+			set_battlefield(c, p);
+			return 1;
+		}
+		temp = p;
+	}
+	temp->l_next = c;   // Enqueue c to the end of the queue
+	return 0;
 }
 
 /* 
@@ -61,7 +81,7 @@ void set_battlefield(struct client *c1, struct client *c2) {
 */
 void battlecast(struct client *c) {
 	// write tim + \n
-	char message[MAX_LENGTH];
+	// char message[MAX_LENGTH];
 	sprintf(message, 
 		   "Your hitpoints: %d\n
 			Your powermoves: %d\n\n 
@@ -86,7 +106,7 @@ void battlecast(struct client *c) {
 	c is the speaker who spoke s
 */
 void battlespeak(struct client *c, char *s) {
-	char message[MAX_LENGTH];
+	// char message[MAX_LENGTH];
 	// c will see
 	sprintf(message, "You spoke: %s\n\n", s);
 	write(c->fd, message, MAX_LENGTH);
@@ -101,7 +121,27 @@ void battlespeak(struct client *c, char *s) {
 	battlecast(c);
 }
 
-
+/* 
+	Then c won the game because it was c's turn
+*/
+void gameover(struct client *c) {
+	// char message[MAX_LENGTH];
+	// Win message to c
+	sprintf(message, "%s gives up. You win!\n\n
+					  Awaiting next opponent...\n", 
+					  c->opp->name); 
+	write(c->fd, message, MAX_LENGTH);
+	// Lose message to c->opp
+	sprintf(message, "You are no match for %s. 
+					  You scurry away...\n\n
+					  Awaiting next opponent...\n", 
+					  c->name);
+	write(c->opp->fd, message, MAX_LENGTH);
+	
+	// Change the states of clients
+	c->state = LOBBY;
+	c->opp->state = LOBBY; 
+}
 
 /* 
 	Handles battle commands. Ignore if wrong command.
@@ -131,23 +171,11 @@ int handle_command(struct client *c, char option) {
 	}
 	c->opp->pkmn->hp -= dmg;  // reduce the hp accordingly
 
-	char message[MAX_LENGTH];
+	// char message[MAX_LENGTH];
 
 	int game_over = (c->opp->pkmn->hp) <= 0;
 	if (game_over) { // opponent dead, game done
-		
-		// Win message to you
-		sprintf(message, "%s gives up. You win!\n\n
-						  Awaiting next opponent...\n", 
-						  c->opp->name); 
-		write(c->fd, message, MAX_LENGTH);
-		// Lose message to them
-		sprintf(message, "You are no match for %s. 
-						  You scurry away...\n\n
-						  Awaiting next opponent...\n", 
-						  c->name);
-		write(c->opp->fd, message, MAX_LENGTH); 
-
+		gameover(c);
 	}
 	else if (did_swing) { // then switch the turns
 		if (dmg > 0) {  // then we hit
@@ -171,7 +199,7 @@ int handle_command(struct client *c, char option) {
 		battlecast(c);
 	}
 
-	return game_over;
+	return game_over; // 1 if game over
 }
 
 
