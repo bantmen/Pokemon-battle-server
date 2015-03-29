@@ -13,13 +13,11 @@
 #define POWERMOVE 'p'
 
 // States
-#define 0
-#define 1
-#define 2
-#define 3
-#define 4
-#define 5
-
+#define NONAME 0
+#define LOBBY 1
+#define YOURTURN 2
+#define MYTURN 3
+#define ISPEAK 4
 
 // STRUCTS
 

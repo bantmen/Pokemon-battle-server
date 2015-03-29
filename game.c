@@ -18,11 +18,10 @@ int randrange(int a, int b) {
 }
 
 // Get the pokemons ready
-int set_battlefield(struct client *c1, struct client *c2) {
+void set_battlefield(struct client *c1, struct client *c2) {
 	// Set the rivalry
 	c1->opp = c2;
 	c2->opp = c1;
-
 	// Toss a coin and decide on who starts
 	int coin = randrange(0, 1); // 0-> c1 starts, 1-> c2 starts
 	if (coin == 0) { 
@@ -33,24 +32,38 @@ int set_battlefield(struct client *c1, struct client *c2) {
 		c1->state = YOURTURN;
 		c2->state = MYTURN; 
 	}
+	// Set the hitpoints randomly between 20 to 30
 	c1->pkm->hp = randrange(20, 30);
 	c2->pkm->hp = randrange(20, 30);
-
-	return tim;
-
+	// Set the number of powermoves between 1 to 3
+	c1->pkm->pm = randrange(1,3);
+	c2->pkm->pm = randrange(1,3);
+	// Print the engage messages to both sides
+	char message[MAX_LENGTH];
+	// Send to c1
+	sprintf(message, "You engage %s!\n", c2->name);
+	write(c1->fd, message, MAX_LENGTH);
+	// Send to c2
+	sprintf(message, "You engage %s!\n", c1->name);
+	write(c2->fd, message, MAX_LENGTH);
 }
 
 // Handles battle commands. Ignore if wrong command
 int handle_command(struct client *c, char option) {
 
 	int dmg = 0; // dmg rolled depending on case option
+	int did_swing = 0;
 
 	switch(option) {
 		case ATTACKMOVE: 
 			dmg = randrange(2, 6);
+			did_swing = 1;
 			break;
 		case POWERMOVE:
-			dmg = randrange(6, 18) * randrange(0, 1);
+			if (c->pkm->pm > 0) {
+				dmg = randrange(6, 18) * randrange(0, 1);
+				did_swing = 1;
+			}
 			break;
 		case SPEAKMOVE:
 			write(c->fd, "Speak: \n", 7+1);
@@ -60,10 +73,24 @@ int handle_command(struct client *c, char option) {
 
 	c->opp->pkm->hp -= dmg;
 
-	// check for hp
-
-	c->state = YOURTURN;
-	c->opp->state = MYTURN;
+	if (c->opp->pkm->hp <= 0) { // opponent dead, game done
+		char message[MAX_LENGTH];
+		// Win message to you
+		sprintf(message, "%s gives up. You win!\n\n
+						  Awaiting next opponent...\n", 
+						  c->opp->name); 
+		write(c->fd, message, MAX_LENGTH);
+		// Lose message to them
+		sprintf(message, "You are no match for %s. 
+						  You scurry away...\n\n
+						  Awaiting next opponent...\n", 
+						  c->name);
+		write(c->opp->fd, message, MAX_LENGTH); 
+	}
+	else if (did_swing) { // then switch the turns
+		c->state = YOURTURN;
+		c->opp->state = MYTURN;
+	}
 
 	return 0;
 
@@ -74,14 +101,15 @@ void battlecast(struct client *c) {
 	// write tim + \n
 
 	char message[MAX_LENGTH];
-	sprinft(message, 
+	sprintf(message, 
 		   "Your hitpoints: %d\n
 			Your powermoves: %d\n\n 
 			%s's hitpoints: %d\n\n
 			(a)ttacks\n
-			(p)owermove\n
+			%s\n
 			(s)peak something\n", 
 			c->pkmn->hp, c->pkmn->pm,
-			c->opp->name, c->opp->pkmn->hp);
+			c->opp->name, c->opp->pkmn->hp,
+			c->pkm->pm? "(p)owermove" : "");  // wow
 	write(c->fd, message, MAX_LENGTH);
 }

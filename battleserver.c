@@ -30,12 +30,12 @@ struct client {
     struct client *next;
     // Our stuff now
     //int last_played;         // fd of the last played player. -1 means NULL
-    struct client *opponent;   // also shows last played
+    struct client *opp;   // pointer to opponent. also shows last played
     char name[MAX_LENGTH/2]; 
     char buf[MAX_LENGTH];
     char inbuf;
-    struct pokemon *pokemon; // to be used in battles
-    int state;
+    struct pokemon *pkmn; // to be used in battles
+    int state;  // 0-> haven't given name, 1-> in lobby, 2-> in game without turn, 3-> in game and his turn
 };
 
 static struct client *addclient(struct client *top, int fd, struct in_addr addr, const char *name);
@@ -226,7 +226,7 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr)
 
     p->last_played = -1;  // Give the default value -1 
     p->buf = malloc(MAX_LENGTH);
-    p->pokemon = malloc(sizeof (struct pokemon)); // Keep the pokemon field ready for battle
+    p->pkmn = malloc(sizeof (struct pokemon)); // Keep the pokemon field ready for battle
     p->inbuf = 0;
 
     p->next = top;
