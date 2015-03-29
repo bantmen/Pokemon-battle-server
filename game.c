@@ -5,12 +5,15 @@
 #include <time.h>
 
 #include "game.h"
+#include "battleserver.h"
 
 // Will be abused nicely for sprintf stuff
 char message[MAX_LENGTH];
 
 // Extern from battleserver
-extern struct client *lobby;
+// extern struct client *lobby;
+struct client *lobby = NULL; // Queue of clients waiting in the lobby 
+
 
 /* 
 	Match c with another client in the lobby.
@@ -20,7 +23,7 @@ int match(struct client *c) {
 	struct client *p, *temp;
 	for (p = lobby; p; p = p->l_next) {
 		// If they didn't play against each other the last time
-		if (c->fd != p->opp->fd || p->fd != c->opp->fd) {  // Then match
+		if (!c->opp || !p->opp || c->fd != p->opp->fd || p->fd != c->opp->fd) {  // Then match
 			temp->l_next = p->l_next;
 			p->l_next = NULL;
 			set_battlefield(c, p);
@@ -36,7 +39,7 @@ int match(struct client *c) {
 	Picks a random integer from the interval [a, b]
 */
 int randrange(int a, int b) {
-	srand(time(null));
+	srand(time(NULL));
 	return rand()%(b-a+1)+a;
 }
 
@@ -83,9 +86,9 @@ void battlecast(struct client *c) {
 	// write tim + \n
 	// char message[MAX_LENGTH];
 	sprintf(message, 
-		   "Your hitpoints: %d\n
-			Your powermoves: %d\n\n 
-			%s's hitpoints: %d\n\n", 
+		   "Your hitpoints: %d\n"
+			"Your powermoves: %d\n\n" 
+			"%s's hitpoints: %d\n\n", 
 			c->pkmn->hp, c->pkmn->pm,
 			c->opp->name, c->opp->pkmn->hp);
 
@@ -94,8 +97,8 @@ void battlecast(struct client *c) {
 	else me = c->opp;
 
 	write(me->fd, message, MAX_LENGTH);
-	write(me->fd, "(a)ttacks\n
-		  (p)owermove\n(s)peak something\n", 
+	write(me->fd, "(a)ttacks\n"
+		  "(p)owermove\n(s)peak something\n", 
 	      MAX_LENGTH);
 	write(me->opp->fd, message, MAX_LENGTH);
 	sprintf(message, "Waiting for %s to strike...\n", me->name);
@@ -111,8 +114,8 @@ void battlespeak(struct client *c, char *s) {
 	sprintf(message, "You spoke: %s\n\n", s);
 	write(c->fd, message, MAX_LENGTH);
 	// c's opponent will see
-	sprintf(message, "%s takes a break to tell you:\n 
-					  %s\n\n", 
+	sprintf(message, "%s takes a break to tell you:\n" 
+					  "%s\n\n", 
 					  c->name, s);
 	write(c->opp->fd, message, MAX_LENGTH);
 
@@ -127,14 +130,14 @@ void battlespeak(struct client *c, char *s) {
 void gameover(struct client *c) {
 	// char message[MAX_LENGTH];
 	// Win message to c
-	sprintf(message, "%s gives up. You win!\n\n
-					  Awaiting next opponent...\n", 
+	sprintf(message, "%s gives up. You win!\n\n"
+					  "Awaiting next opponent...\n", 
 					  c->opp->name); 
 	write(c->fd, message, MAX_LENGTH);
 	// Lose message to c->opp
-	sprintf(message, "You are no match for %s. 
-					  You scurry away...\n\n
-					  Awaiting next opponent...\n", 
+	sprintf(message, "You are no match for %s." 
+					  "You scurry away...\n\n"
+					  "Awaiting next opponent...\n", 
 					  c->name);
 	write(c->opp->fd, message, MAX_LENGTH);
 	
@@ -166,7 +169,7 @@ int handle_command(struct client *c, char option) {
 			break;
 		case SPEAKMOVE:
 			write(c->fd, "Speak: \n", 7+1);
-			c->state = SPEAK;
+			c->state = ISPEAK;
 			break;
 	}
 	c->opp->pkmn->hp -= dmg;  // reduce the hp accordingly

@@ -1,9 +1,10 @@
 #ifndef _GAME_H
 #define _GAME_H
 
+#include "battleserver.h"
+
 // MACROS
 
-#define MAX_LENGTH 1024
 #define WELCOME_MESSAGE "Enter your name: "
 #define BROADCAST_MESSAGE  " has entered the arena."
 
@@ -19,14 +20,13 @@
 #define MYTURN 3
 #define ISPEAK 4
 
-// STRUCTS
-
-struct pokemon {
-	int hp;  // hitpoints
-	int pm;  // powermove 
-};
-
 // FUNCTION PROTOTYPES
+int match(struct client *c);
+int randrange(int a, int b);
+void set_battlefield(struct client *c1, struct client *c2);
+void battlecast(struct client *c);
+void battlespeak(struct client *c, char *s);
+void gameover(struct client *c);
+int handle_command(struct client *c, char option);
 
 #endif
-

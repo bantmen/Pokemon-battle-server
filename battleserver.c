@@ -7,49 +7,16 @@
  * _or_ for a new connection.
 */
 
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include "game.h"
+#include "battleserver.h"
 
-#include "game.h" 
-
-#ifndef PORT
-    #define PORT 30101
-#endif
-
-// USE A FUCKING .h file
-struct client {
-    int fd;
-    struct in_addr ipaddr;
-    struct client *next;   // next for the general list
-    struct client *l_next; // next for the lobby list
-    // Our stuff now
-    //int last_played;         // fd of the last played player. -1 means NULL
-    struct client *opp;   // pointer to opponent. also shows last played
-    // char name[MAX_LENGTH/2]; 
-    char const *name; 
-    char buf[MAX_LENGTH];
-    char inbuf;
-    struct pokemon *pkmn; // to be used in battles
-    int state;  // 0-> haven't given name, 1-> in lobby, 2-> in game without turn, 3-> in game and his turn
-};
-
-static struct client *addclient(struct client *top, int fd, struct in_addr addr, const char *name);
-static struct client *removeclient(struct client *top, int fd);
-static void broadcast(struct client *top, char *s, int size, struct client *c);
-int handle_input(int fd, char *buf); 
-int find_network_newline(char *buf, int inbuf);
-int bindandlisten(void);
+// #ifndef PORT
+//     #define PORT 30101
+// #endif
 
 // Global Variables
 struct client *head = NULL;  // Linked list of all clients
-struct client *lobby = NULL; // Queue of clients waiting in the lobby 
+// struct client *lobby = NULL; // Queue of clients waiting in the lobby 
 
 int main(void) {
     int clientfd, maxfd, nready;
@@ -62,10 +29,7 @@ int main(void) {
     // int i;
 
     // Our stuff
-    char client_name[MAX_LENGTH/2];
     int read_len;
-    int readyfd;
-    struct client lobby[3]; // waitlist for the available players
     struct client *c;
 
     int listenfd = bindandlisten();
@@ -84,7 +48,8 @@ int main(void) {
         tv.tv_sec = 10;
         tv.tv_usec = 0;  /* and microseconds */
 
-        nready = select(maxfd + 1, &rset, NULL, NULL, &tv);
+        // nready = select(maxfd + 1, &rset, NULL, NULL, &tv);
+        nready = select(maxfd + 1, &rset, NULL, NULL, NULL);
         if (nready == 0) {
             printf("No response from clients in %ld seconds\n", tv.tv_sec);
             printf("Name: %s\n", head? head->name : "NOPE");
@@ -117,6 +82,7 @@ int main(void) {
         }
 
         for (c = head; c; c = c->next) {
+            printf("Current fd: %d\n", c->fd);
             // Handle all the existing clients
             if (FD_ISSET(c->fd, &rset)) {
                 if ((read_len = read(c->fd, c->buf + c->inbuf, sizeof(c->buf)-c->inbuf)) > 0) {
@@ -131,7 +97,6 @@ int main(void) {
 
 int find_network_newline(char *buf, int inbuf) {
     int i;
-
     for(i=0; i<inbuf; i++) {
         if (buf[i] == '\n') {
             return i;
@@ -142,14 +107,15 @@ int find_network_newline(char *buf, int inbuf) {
 
 void handle_existing(struct client *c, int read_len) {
     char message[MAX_LENGTH];
-
+    int where;
     int state = c->state;
     switch(state) {
         case NONAME:   // Check if full message is ready. if ready, then give name
             where = find_network_newline(c->buf, c->inbuf);
             if (where != -1) {  // Then ready to be collected
                 c->buf[where] = '\0'; // Change \n with \0
-                strncpy(c->name, c->buf, c->inbuf);
+                printf("BEFORE GIVING NAME: %s\n", c->buf);
+                strncpy(c->name, c->buf, where+1);
                 c->inbuf = 0;
                 sprintf(message, "Welcome, %s! Awaiting opponent...\n", c->name);
                 write(c->fd, message, MAX_LENGTH);
@@ -162,6 +128,7 @@ void handle_existing(struct client *c, int read_len) {
             }
             else {  // update inbuf since they are not done writing
                 c->inbuf += read_len;
+                printf("Each time: %d\n", c->inbuf);
             }
             break;
         case LOBBY:    // Ignore the lobby talk
@@ -239,17 +206,14 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr)
     p->fd = fd;
     p->ipaddr = addr;
 
-    // strncpy(p->name, name, MAX_LENGTH); // Client's name
-
-    p->last_played = -1;  // Give the default value -1 
-    p->buf = malloc(MAX_LENGTH);
+    // p->buf = malloc(MAX_LENGTH);
     p->pkmn = malloc(sizeof (struct pokemon)); // Keep the pokemon field ready for battle
     p->inbuf = 0;
-
+    p->l_next = NULL; // not enqueued to the lobby yet
+    p->state = NONAME;
+    p->opp = NULL;
     p->next = top;
     top = p;
-
-    p->l_next = NULL; // not enqueued to the lobby yet
 
     return top;
 }

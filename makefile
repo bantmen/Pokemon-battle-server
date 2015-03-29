@@ -1,10 +1,11 @@
 PORT=30103
 CFLAGS= -DPORT=\$(PORT) -g -Wall
+DEPS = game.h battleserver.h
 
 all: battle
 	
 battle: battleserver.o game.o
-	gcc ${CFLAGS}  -o $@ $^
+	gcc $(CFLAGS) -o battle battleserver.o game.o
 
-%.o: %.c game.h
-	gcc ${CFLAGS}  -c $<
+%.o: %.c $(DEPS)
+	gcc $(CFLAGS) -c -o $@ $<
