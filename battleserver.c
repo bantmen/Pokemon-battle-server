@@ -24,7 +24,9 @@
 #endif
 
 // Max length of characters before \r\n
-#define MAX_LENGTH 150  
+#define MAX_LENGTH 500
+#define WELCOME_MESSAGE "Enter your name: "
+#define BROADCAST_MESSAGE  " has entered the arena."
 
 struct client {
     int fd;
@@ -36,15 +38,17 @@ struct client {
     struct pokemon *pokemon; // to be used in battles
 };
 
-static struct client *addclient(struct client *top, int fd, struct in_addr addr, char *name);
+static struct client *addclient(struct client *top, int fd, struct in_addr addr, const char *name);
 static struct client *removeclient(struct client *top, int fd);
 static void broadcast(struct client *top, char *s, int size);
 //int handleclient(struct client *p, struct client *top);
-void handle_input(int fd, char *buf); 
-void handle_newclient(int clientfd);
+int handle_input(int fd, char *buf); 
+void handle_newclient(int clientfd, struct client *head, char *client_name);
 int find_network_newline(char *buf, int inbuf);
-int buf_input();
 
+
+    // char *WELCOME_MESSAGE = "Enter your name: ";
+    // char *BROADCAST_MESSAGE = " has entered the arena";
 
 int bindandlisten(void);
 
@@ -61,9 +65,7 @@ int main(void) {
     int i;
 
     // Our stuff
-    char *WELCOME_MESSAGE = "Enter your name: ";
-    char *BROADCAST_MESSAGE = " has entered the arena";
-    char temp[MAX_LENGTH];
+    char client_name[MAX_LENGTH/2];
 
     int listenfd = bindandlisten();
     // initialize allset and add listenfd to the
@@ -84,6 +86,7 @@ int main(void) {
         nready = select(maxfd + 1, &rset, NULL, NULL, &tv);
         if (nready == 0) {
             printf("No response from clients in %ld seconds\n", tv.tv_sec);
+            printf("Name: %s\n", head? head->name : "NOPE");
             continue;
         }
 
@@ -108,42 +111,21 @@ int main(void) {
             }
             printf("connection from %s\n", inet_ntoa(q.sin_addr));
 
-            temp = handle_newclient(clientfd);
+            // strncpy(client_name, handle_newclient(clientfd, head), MAX_LENGTH);
 
-            head = addclient(head, clientfd, q.sin_addr, temp); // Modified to get the name
+            handle_newclient(clientfd, head, client_name);
 
-            broadcast(head, client_name, strlen(client_name));
+            head = addclient(head, clientfd, q.sin_addr, client_name); // Modified to get the name
 
             // Tell that he is waiting
         }
-
-
-
-        // for(i = 0; i <= maxfd; i++) {
-        //     if (FD_ISSET(i, &rset)) {
-        //         for (p = head; p != NULL; p = p->next) {
-        //             if (p->fd == i) {
-        //                 int result = handleclient(p, head);
-        //                 if (result == -1) {
-        //                     int tmp_fd = p->fd;
-        //                     head = removeclient(head, p->fd);
-        //                     FD_CLR(tmp_fd, &allset);
-        //                     close(tmp_fd);
-        //                 }
-        //                 break;
-        //             }
-        //         }
-        //     }
-        // }
-
-
 
     }
     return 0;
 }
 
 // 
-void handle_input(int fd, char *buf) {
+int handle_input(int fd, char *buf) {
     int len = read(fd, buf, sizeof(buf) - 1);
     int i = find_network_newline(buf, len); 
 
@@ -151,50 +133,27 @@ void handle_input(int fd, char *buf) {
         len += read(fd, &buf[len], sizeof(buf) - 1);
         i = find_network_newline(buf, len); 
     }
+
+    buf[len] = '\0';
+
+    return len;
 } 
 
-char *handle_newclient(int clientfd) {
-    char client_name[MAX_LENGTH];  // temp variable to hold client's name
+void handle_newclient(int clientfd, struct client *head, char *client_name) {
+    // char client_name[MAX_LENGTH/2];    // temp variable to hold client's name
+    char client_message[MAX_LENGTH]; // client_name + BROADCAST_MESSAGE
 
     write(clientfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE)); // Welcome them
-    handle_input(clientfd, client_name); // Store their name
+    int len = handle_input(clientfd, client_name); // Store their name
+    client_name[len-1] = '\0';
+    
+    memmove(client_message, client_name, strlen(client_name)); 
+    memmove(client_message+strlen(client_message), BROADCAST_MESSAGE, strlen(BROADCAST_MESSAGE)+1);   
 
-    // Broadcast the new player
-    memmove(client_name+strlen(client_name), BROADCAST_MESSAGE, strlen(BROADCAST_MESSAGE)+1);  
+    broadcast(head, client_message, strlen(client_message)); // Broadcast the new player
 
-    return client_name;
+    // return client_name;
 }
-
-// int handleclient(struct client *p, struct client *top) {
-//     char buf[256];
-//     char outbuf[512];
-    
-//     int len = read(p->fd, buf, sizeof(buf) - 1);
-//     int i = find_network_newline(buf, len); 
-
-//     while (i == -1) {
-//         len += read(p->fd, &buf[len], sizeof(buf) - 1);
-//         i = find_network_newline(buf, len); 
-//     }
-    
-//     //int len = read(p->fd, buf, sizeof(buf) - 1);
-//     if (len > 0) {
-//         buf[len] = '\0';
-//         printf("Received %d bytes: %s", len, buf);
-//         sprintf(outbuf, "%s says: %s", inet_ntoa(p->ipaddr), buf);
-//         broadcast(top, outbuf, strlen(outbuf)); 
-//         return 0;
-//     } else if (len == 0) {
-//         // socket is closed
-//         printf("Disconnect from %s\n", inet_ntoa(p->ipaddr));
-//         sprintf(outbuf, "Goodbye %s\r\n", inet_ntoa(p->ipaddr));
-//         broadcast(top, outbuf, strlen(outbuf));
-//         return -1;
-//     } else { // shouldn't happen
-//         perror("read");
-//         return -1;
-//     }
-// }
 
  /* bind and listen, abort on error
   * returns FD of listening socket
@@ -228,7 +187,7 @@ int bindandlisten(void) {
     return listenfd;
 }
 
-static struct client *addclient(struct client *top, int fd, struct in_addr addr, char *name) {
+static struct client *addclient(struct client *top, int fd, struct in_addr addr, const char *name) {
     struct client *p = malloc(sizeof(struct client));
     if (!p) {
         perror("malloc");
@@ -242,10 +201,10 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr,
     strncpy(p->name, name, MAX_LENGTH); // Client's name
     p->pokemon = malloc(sizeof (struct pokemon)); // Keep the pokemon field ready for battle
     p->last_played = -1;  // Give the default value -1 
+    
     p->next = top;
     top = p;
 
-    // 
     return top;
 }
 

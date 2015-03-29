@@ -1,4 +1,4 @@
-PORT=30102
+PORT=30103
 CFLAGS= -DPORT=\$(PORT) -g -Wall
 
 all: battle
