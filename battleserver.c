@@ -23,39 +23,34 @@
     #define PORT 30101
 #endif
 
-// Max length of characters before \r\n
-#define MAX_LENGTH 500
-#define WELCOME_MESSAGE "Enter your name: "
-#define BROADCAST_MESSAGE  " has entered the arena."
-
+// USE A FUCKING .h file
 struct client {
     int fd;
     struct in_addr ipaddr;
     struct client *next;
     // Our stuff now
-    int last_played;         // fd of the last played player. -1 means NULL
-    char name[MAX_LENGTH]; 
+    //int last_played;         // fd of the last played player. -1 means NULL
+    struct client *opponent;   // also shows last played
+    char name[MAX_LENGTH/2]; 
+    char buf[MAX_LENGTH];
+    char inbuf;
     struct pokemon *pokemon; // to be used in battles
+    int state;
 };
 
 static struct client *addclient(struct client *top, int fd, struct in_addr addr, const char *name);
 static struct client *removeclient(struct client *top, int fd);
 static void broadcast(struct client *top, char *s, int size);
-//int handleclient(struct client *p, struct client *top);
 int handle_input(int fd, char *buf); 
 void handle_newclient(int clientfd, struct client *head, char *client_name);
 int find_network_newline(char *buf, int inbuf);
-
-
-    // char *WELCOME_MESSAGE = "Enter your name: ";
-    // char *BROADCAST_MESSAGE = " has entered the arena";
-
 int bindandlisten(void);
 
 int main(void) {
     int clientfd, maxfd, nready;
     struct client *p;
     struct client *head = NULL;
+    struct client lobby[3]; // waitlist for the available players
     socklen_t len;
     struct sockaddr_in q;
     struct timeval tv;
@@ -66,6 +61,7 @@ int main(void) {
 
     // Our stuff
     char client_name[MAX_LENGTH/2];
+    int read_len;
 
     int listenfd = bindandlisten();
     // initialize allset and add listenfd to the
@@ -95,7 +91,8 @@ int main(void) {
             continue;
         }
 
-        if (FD_ISSET(listenfd, &rset)){
+        // Then, they are just connecting
+        if (FD_ISSET(listenfd, &rset)) {
             printf("a new client is connecting\n");
             len = sizeof(q);
             if ((clientfd = accept(listenfd, (struct sockaddr *)&q, &len)) < 0) {
@@ -103,40 +100,65 @@ int main(void) {
                 exit(1);
             }
 
-            //login function
-
             FD_SET(clientfd, &allset);
             if (clientfd > maxfd) {
                 maxfd = clientfd;
             }
             printf("connection from %s\n", inet_ntoa(q.sin_addr));
 
-            // strncpy(client_name, handle_newclient(clientfd, head), MAX_LENGTH);
+            head = addclient(head, clientfd, q.sin_addr); 
 
-            handle_newclient(clientfd, head, client_name);
-
-            head = addclient(head, clientfd, q.sin_addr, client_name); // Modified to get the name
-
-            // Tell that he is waiting
+            write(clientfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE)); // Ask for their name
         }
+
+        // They have already connected, so we have their struct
+        p = get_client(listenfd);
+
+        if (!FD_ISSET(listenfd, &rset) && 
+            (read_len = read(p->fd, p->buf + p->inbuf, sizeof(p->buf)-p->inbuf)) > 0) {
+            where = find_network_newline()
+
+        }
+
+
 
     }
     return 0;
 }
 
-// 
-int handle_input(int fd, char *buf) {
-    int len = read(fd, buf, sizeof(buf) - 1);
-    int i = find_network_newline(buf, len); 
+int find_network_newline(char *buf, int inbuf) {
+    int i;
 
-    while (i == -1) {
-        len += read(fd, &buf[len], sizeof(buf) - 1);
-        i = find_network_newline(buf, len); 
+    for(i=0;i<inbuf;i++){
+        if (buf[i] == '\n') {
+            return i;
+        }
     }
+    return -1; // return the location of '\r' if found
+}
 
-    buf[len] = '\0';
+// return != -1 => input is ready to be used
+int handle_input(struct client *c) {
+    int where = find_network_newline(c->buf, c->inbuf);
 
-    return len;
+
+
+
+
+    return where;
+
+
+    // int len = read(fd, buf, sizeof(buf) - 1);
+    // int i = find_network_newline(buf, len); 
+
+    // while (i == -1) {
+    //     len += read(fd, &buf[len], sizeof(buf) - 1);
+    //     i = find_network_newline(buf, len); 
+    // }
+
+    // buf[len] = '\0';
+
+    // return len;
 } 
 
 void handle_newclient(int clientfd, struct client *head, char *client_name) {
@@ -146,6 +168,7 @@ void handle_newclient(int clientfd, struct client *head, char *client_name) {
     write(clientfd, WELCOME_MESSAGE, strlen(WELCOME_MESSAGE)); // Welcome them
     int len = handle_input(clientfd, client_name); // Store their name
     client_name[len-1] = '\0';
+    // write(clientfd, );
     
     memmove(client_message, client_name, strlen(client_name)); 
     memmove(client_message+strlen(client_message), BROADCAST_MESSAGE, strlen(BROADCAST_MESSAGE)+1);   
@@ -187,7 +210,7 @@ int bindandlisten(void) {
     return listenfd;
 }
 
-static struct client *addclient(struct client *top, int fd, struct in_addr addr, const char *name) {
+static struct client *addclient(struct client *top, int fd, struct in_addr addr) {
     struct client *p = malloc(sizeof(struct client));
     if (!p) {
         perror("malloc");
@@ -198,10 +221,14 @@ static struct client *addclient(struct client *top, int fd, struct in_addr addr,
 
     p->fd = fd;
     p->ipaddr = addr;
-    strncpy(p->name, name, MAX_LENGTH); // Client's name
-    p->pokemon = malloc(sizeof (struct pokemon)); // Keep the pokemon field ready for battle
+
+    // strncpy(p->name, name, MAX_LENGTH); // Client's name
+
     p->last_played = -1;  // Give the default value -1 
-    
+    p->buf = malloc(MAX_LENGTH);
+    p->pokemon = malloc(sizeof (struct pokemon)); // Keep the pokemon field ready for battle
+    p->inbuf = 0;
+
     p->next = top;
     top = p;
 
@@ -236,13 +263,4 @@ static void broadcast(struct client *top, char *s, int size) {
     /* should probably check write() return value and perhaps remove client */
 }
 
-int find_network_newline(char *buf, int inbuf) {
-  int i;
 
-  for(i=0;i<inbuf;i++){
-    if (buf[i] == '\n') {
-        return i;
-    }
-  }
-  return -1; // return the location of '\r' if found
-}
